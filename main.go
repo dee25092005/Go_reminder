@@ -1,60 +1,40 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"go-onboarding/calculator"
+	"go-onboarding/api"
 	"go-onboarding/storage"
+	"net/http"
+	"os"
+
+	"github.com/joho/godotenv"
 )
 
-type UserAccessor interface {
-	Save(id int, name string) error
-	Get(id int) (storage.User, bool)
-}
-
 func main() {
-	fmt.Println("catch error")
-	store := storage.NewDataStore()
-	anlayticEngine := calculator.NewAnalytic()
-
-	err := runBusisnessLogic(store, anlayticEngine)
+	fmt.Println("starting Live Postgres testing...")
+	err := godotenv.Load()
 	if err != nil {
-		fmt.Printf("Application Fatal Error: %v\n", err)
+		fmt.Printf("failed to load env: %v\n", err)
+		return
 	}
 
-}
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		fmt.Println("no database url provided")
+		os.Exit(1)
+	}
 
-func runBusisnessLogic(accessor UserAccessor, calc *calculator.Analytic) error {
-	err := accessor.Save(10, "Dee")
+	store, err := storage.NewSQLStore(connStr)
 	if err != nil {
-		if errors.Is(err, storage.ErrInvalidName) {
-			fmt.Println("⚠️ Validation intercept working perfectly")
-			return nil
-		}
-		return fmt.Errorf("failed to save data due to system error: %w", err)
+		fmt.Printf("failed to create store: %v\n", err)
+		return
 	}
 
-	name, ok := accessor.Get(10)
-	if !ok {
-		return fmt.Errorf("user migration missing")
-	}
-	fmt.Println("Suceesfully retrieved name:", name)
-
-	b, err := calc.CalculateBonus(name.ID)
+	UserHandler := api.NewUserHandler(store)
+	fmt.Println("starting server...")
+	err = http.ListenAndServe(":8080", UserHandler)
 	if err != nil {
-
-		return fmt.Errorf("failed to process analytics: %w", err)
-	}
-	fmt.Println("Suceesfully calculated bonus:", b)
-
-	err = accessor.Save(11, "")
-	if err != nil {
-		if errors.Is(err, storage.ErrInvalidName) {
-			fmt.Println("⚠️ Validation intercept working perfectly")
-			return nil
-		}
-		return fmt.Errorf("unexpected system failure: %w", err)
+		fmt.Printf("failed to start server: %v\n", err)
 	}
 
-	return nil
 }

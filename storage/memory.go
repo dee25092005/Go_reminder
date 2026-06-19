@@ -4,10 +4,15 @@ import "errors"
 
 var ErrInvalidName = errors.New("storage: user anme can't be empty")
 
-//capital for public and lower for private
+type UserAccessor interface {
+	Save(id int, name string) error
+	Get(id int) (User, bool)
+}
+
+//JSON struct for the user
 type User struct {
-	ID   int
-	Name string
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 type DataStore struct {
