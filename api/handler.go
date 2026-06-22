@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"go-onboarding/storage"
 	"net/http"
+	"strconv"
 )
 
 type UserHandler struct {
@@ -15,15 +16,29 @@ func NewUserHandler(ua storage.UserAccessor) *UserHandler {
 }
 
 func (h *UserHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	switch r.Method {
 	case http.MethodGet:
-		user, ok := h.accessor.Get(10)
+		idParam := r.URL.Query().Get("id")
+		if idParam == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error": "id is required"}`))
+			return
+		}
+
+		targerID, err := strconv.Atoi(idParam)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error": "invalid id"}`))
+			return
+		}
+		user, ok := h.accessor.Get(targerID)
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			w.Write([]byte(`{"error": "user not found"}`))
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
+
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(user)
 
