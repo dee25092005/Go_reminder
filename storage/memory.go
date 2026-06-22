@@ -7,12 +7,20 @@ var ErrInvalidName = errors.New("storage: user anme can't be empty")
 type UserAccessor interface {
 	Save(id int, name string) error
 	Get(id int) (User, bool)
+	GetFullProfile(id int) (UserProfile, bool)
 }
 
 //JSON struct for the user
 type User struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
+}
+
+type UserProfile struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Biography string `json:"biography"`
+	Github    string `json:"github"`
 }
 
 type DataStore struct {

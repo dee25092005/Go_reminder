@@ -31,8 +31,19 @@ func main() {
 	}
 
 	UserHandler := api.NewUserHandler(store)
+	loginHandler := api.NewLoginHandler()
+
+	protectedUserChain := api.Logger(api.RequireAuth(UserHandler))
+
+	publicLoginChain := api.Logger(loginHandler)
+
+	mux := http.NewServeMux()
+	mux.Handle("/users", protectedUserChain)
+	mux.Handle("/login", publicLoginChain)
+
 	fmt.Println("starting server...")
-	err = http.ListenAndServe(":8080", UserHandler)
+	fmt.Println("starting server on http://localhost:8080 ...")
+	err = http.ListenAndServe(":8080", mux)
 	if err != nil {
 		fmt.Printf("failed to start server: %v\n", err)
 	}

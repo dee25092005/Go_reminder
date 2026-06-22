@@ -44,6 +44,11 @@ func (ss *SQLStore) createSchema() error {
 			id INT PRIMARY KEY,
 			name VARCHAR(100) NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS profiles(
+			user_id INT PRIMARY KEY REFERENCES users(id),
+			biography TEXT NOT NULL,
+			github_username VARCHAR(100) NOT NULL
+		)
 	`
 
 	_, err := ss.db.Exec(query)
@@ -69,6 +74,18 @@ func (ss *SQLStore) Save(id int, name string) error {
 	return nil
 }
 
+func (ss *SQLStore) SaveProfile(userID int, bio string, github string) error {
+	query := `
+		INSERT INTO profiles (user_id, biography, github_username) VALUES ($1, $2, $3);
+	`
+	_, err := ss.db.Exec(query, userID, bio, github)
+	if err != nil {
+		return fmt.Errorf("failed to create profile: %w", err)
+	}
+	return nil
+
+}
+
 func (ss *SQLStore) Get(id int) (User, bool) {
 	query := `
 		SELECT id, name FROM users WHERE id = $1;
@@ -85,4 +102,25 @@ func (ss *SQLStore) Get(id int) (User, bool) {
 	}
 	return u, true
 
+}
+
+func (ss *SQLStore) GetFullProfile(id int) (UserProfile, bool) {
+	query := `
+		SELECT u.id, u.name, p.biography,p.github_username 
+		FROM users u
+		INNER JOIN profiles p ON u.id = p.user_id
+		WHERE u.id = $1;
+		`
+
+	var dto UserProfile
+	err := ss.db.QueryRow(query, id).Scan(&dto.ID, &dto.Name, &dto.Biography, &dto.Github)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return UserProfile{}, false
+		}
+		fmt.Printf("failed to get user: %v\n", err)
+		return UserProfile{}, false
+	}
+
+	return dto, true
 }
