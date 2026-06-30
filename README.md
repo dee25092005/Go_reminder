@@ -98,20 +98,158 @@ func (u *User) ChangeName(newName string) {
 
 ---
 
-##  ໂຄງສ້າງໂປຣເຈັກ
+## 6. ຊັ້ນ HTTP Request (Headers & Content Types)
+
+ການເຊື່ອມຕໍ່ທຸກຄັ້ງເລີ່ມຈາກຝັ່ງ client (ເຊັ່ນ: Postman ຫຼື mobile app). client ຕ້ອງບອກ server ວ່າຂໍ້ມູນທີ່ສົ່ງມາແມ່ນຫຍັງ ແລະ ໃຜເປັນຄົນສົ່ງ — ຜ່ານ **headers**.
+
+- **`Content-Type: application/json`** → ບອກ Go server ວ່າ "payload ໃນ request body ແມ່ນ JSON string, ບໍ່ແມ່ນ plain text"
+- **`Authorization: Bearer <JWT>`** → header ປະເພດ passport. ແທນທີ່ຈະສົ່ງ password ໄປຊໍ້າໆ, client ສົ່ງ string ນີ້ເພື່ອພິສູດວ່າເຄີຍ login ແລ້ວ
+
+```http
+POST /users HTTP/1.1
+Host: localhost:8080
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+{
+  "name": "Dee",
+  "email": "dee@example.com"
+}
+```
+
+ໃນ Go ຝັ່ງ server, ດຶງ header ດ້ວຍ:
+
+```go
+contentType := r.Header.Get("Content-Type")
+authHeader  := r.Header.Get("Authorization")
+```
+
+---
+
+## 7. Middleware (ຕົວດັກຈັບ Request)
+
+ກ່ອນ request ຈະໄປຮອດ business logic, ມັນຈະຜ່ານ **middleware chain** ກ່ອນ — ຄືກັບລົດທີ່ຜ່ານດ່ານກວດຄວາມປອດໄພທີ່ລະດ່ານ.
+
+### Logger Middleware
+
+ບັນທຶກເວລາທີ່ request ເຂົ້າມາ (`time.Now()`), ສົ່ງຕໍ່ໃຫ້ chain ຕໍ່ໄປ, ແລ້ວຄຳນວນເວລາທີ່ໃຊ້ (microsecond) ຫຼັງຈາກ response ສຳເລັດ.
+
+```go
+func Logger(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        start := time.Now()
+        next.ServeHTTP(w, r)  // ສົ່ງຕໍ່ໃຫ້ chain ຕໍ່ໄປ
+        log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
+    })
+}
+```
+
+### RequireAuth Middleware (ຍາມເຝົ້າປະຕູ)
+
+ຂັ້ນຕອນການເຮັດວຽກ:
+
+1. ດຶງ `Authorization` header
+2. ຕັດ prefix `"Bearer "` ອອກ
+3. parse token string
+4. ໃຊ້ secret key ຈາກ `.env` ກວດສອບ signature (cryptographic math)
+5. ຖ້າ signature ຖືກປ່ຽນແປງ → ຢຸດທັນທີ (`return`) ແລະຕອບ `401 Unauthorized` **ໂດຍບໍ່ຕ້ອງເຂົ້າ DB ເລີຍ** 
+
+```go
+func RequireAuth(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        tokenString := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+
+        token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+            return []byte(os.Getenv("JWT_SECRET")), nil
+        })
+
+        if err != nil || !token.Valid {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return  // ຢຸດທີ່ນີ້ — ບໍ່ສົ່ງຕໍ່
+        }
+
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+---
+
+## 8. Router (ServeMux Multiplexer)
+
+ຫຼັງ request ຜ່ານ global middleware ໝົດແລ້ວ, ມັນຈະຮອດ `http.NewServeMux()`. ມັນເຮັດໜ້າທີ່ເປັນ **ຕຳຫຼວດຈະລາຈອນ** ໂດຍແບ່ງເສັ້ນທາງຕາມ URL path.
+
+| Path | Handler | ການປ້ອງກັນ |
+|------|---------|-----------|
+| `/login` | `LoginHandler` | public (ໃຊ້ອອກ token) |
+| `/users` | `UserHandler` | secured (ຕ້ອງມີ token) |
+
+```go
+mux := http.NewServeMux()
+
+// public route — ໃຜກໍ່ເຂົ້າໄດ້
+mux.HandleFunc("/login", LoginHandler)
+
+// protected route — ຫຸ້ມດ້ວຍ RequireAuth ກ່ອນ
+mux.Handle("/users", RequireAuth(http.HandlerFunc(UserHandler)))
+
+// ຫຸ້ມທັງ mux ດ້ວຍ Logger ເພື່ອບັນທຶກທຸກ request
+http.ListenAndServe(":8080", Logger(mux))
+```
+
+ໂຄງສ້າງລຳດັບການເຮັດວຽກ:
 
 ```
-go-modular-onboarding/
-│
-├── go.mod                 # ໄຟລ໌ root ຂອງ module
-├── main.go                # entry point ຂອງໂປຣແກຣມ
-│
-├── storage/               # logic ກ່ຽວກັບ user
-│   └── memory.go
-│
-└── calculator/            # logic ກ່ຽວກັບການຄຳນວນ
-    └── math.go
+Client → Logger → RequireAuth → ServeMux → UserHandler → DB
 ```
+
+---
+
+## 9. Database & SQL Joins (Relational Engine)
+
+ໃນ `SQLStore`, ກ້າວຂ້າມການ query ແບບ single-table ໄປສູ່ສະຖາປັດຕະຍະກຳແບບ relational ແທ້ໆ.
+
+### Foreign Keys
+
+ເຊື່ອມຕາຕະລາງ `profiles` ກັບ `users` ໂດຍໃຊ້ `REFERENCES users(id)`. ນີ້ສ້າງ "ສະພານ" ລະຫວ່າງສອງຕາຕະລາງ.
+
+```sql
+CREATE TABLE users (
+    id    SERIAL PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE profiles (
+    id      SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),   -- ສະພານເຊື່ອມ
+    bio     TEXT
+);
+```
+
+### INNER JOIN
+
+ຮວມຂໍ້ມູນຈາກສອງຕາຕະລາງຜ່ານ key. **ຕ້ອງມີ record ຢູ່ທັງສອງຝັ່ງ** ຈິ່ງຈະປະກົດໃນຜົນລັບ — ຖ້າຝັ່ງໃດຝັ່ງໜຶ່ງບໍ່ມີ, record ນັ້ນຈະຖືກຕັດອອກຈາກ `UserProfileDTO`.
+
+```go
+query := `
+    SELECT u.id, u.email, p.bio
+    FROM users u
+    INNER JOIN profiles p ON u.id = p.user_id
+    WHERE u.id = $1
+`
+
+var dto UserProfileDTO
+err := db.QueryRow(query, userID).Scan(&dto.ID, &dto.Email, &dto.Bio)
+```
+
+### ປະເພດ JOIN ທີ່ຄວນຮູ້
+
+| JOIN | ພຶດຕິກຳ |
+|------|--------|
+| `INNER JOIN` | ເອົາສະເພາະ record ທີ່ມີຢູ່ທັງສອງຝັ່ງ |
+| `LEFT JOIN` | ເອົາທຸກ record ຈາກຝັ່ງຊ້າຍ, NULL ຖ້າຝັ່ງຂວາບໍ່ມີ |
+| `RIGHT JOIN` | ກົງກັນຂ້າມກັບ LEFT JOIN |
+
 
 ---
 
